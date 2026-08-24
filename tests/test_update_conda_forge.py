@@ -7,8 +7,42 @@ import pytest
 from scikit_package.cli.update.conda_forge import (
     _get_repo_slug,
     _list_feedstock,
+    _run_commands,
     _update_meta_yaml,
 )
+
+
+def test_run_commands_quotes_pull_request_title(tmp_path, mocker):
+    # Test that arguments containing spaces are double quoted. cmd.exe on
+    # Windows does not treat single quotes as quoting, so a single quoted
+    # title reaches gh as two separate arguments.
+    for helper in (
+        "_check_working_tree_clean",
+        "_check_remote_exists",
+        "_check_branch_exists",
+        "_update_meta_yaml",
+    ):
+        mocker.patch(f"scikit_package.cli.update.conda_forge.{helper}")
+    mocker.patch(
+        "scikit_package.cli.update.conda_forge._get_upstream_default_branch",
+        return_value="main",
+    )
+    mocker.patch(
+        "scikit_package.utils.auth.get_current_branch", return_value="main"
+    )
+    mock_run = mocker.patch("scikit_package.cli.update.conda_forge.run")
+    _run_commands(
+        tmp_path,
+        tmp_path / "meta.yaml",
+        "1.0.0",
+        "abc123",
+        "someuser",
+        "my-package",
+    )
+    commands = [call.args[0] for call in mock_run.call_args_list]
+    pr_command = next(c for c in commands if c.startswith("gh pr create"))
+    assert '--title "Release 1.0.0"' in pr_command
+    assert "'" not in pr_command
 
 
 def test_update_meta_yaml_realistic(tmpdir):
